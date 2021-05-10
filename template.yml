@@ -8,8 +8,8 @@ Transform:
 Globals:
   Function:
     Tracing: Active
-    # Layers:
-    #   - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
+    Layers:
+      - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
 Parameters:
   StageName:

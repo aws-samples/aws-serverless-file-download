@@ -6,6 +6,8 @@ This architecture uses S3 PreSigned URL and WebSocket endpoint.
 > `main` branch uses AWS JavaScript SDK v3.  
 > `aws-sdk-v2` branch uses AWS JavaScript SDK v2.
 
+> :warning: npm version 7.12.0 does not package the zip files properly. Use v7.10.0 when working on **main** branch
+
 ## Rationale
 Customers are interested in using API Gateway as a front door for their backend HTTP endpoints. API Gateway as a managed service provides a lot of benefits to customer, such as creating, publishing, maintaining, monitoring, and securing REST, HTTP, and WebSocket APIs at any scale. In some edge case scenarios, customers want to use API Gateway and Lambda integration but are limited to API Gateway’s 10 MB payload size, API Gateway’s 30 seconds timeout, and Lambda’s 6MB payload size for synchronous request/response.
 
