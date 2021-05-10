@@ -1,0 +1,47 @@
+{
+  "Comment": "A simple state machine to mock an HTTP Endpoint call with a wait, then download a large file from S3, send pre-signed URL to WebSocket",
+  "StartAt": "WaitForHTTPCall",
+  "States": {
+    "WaitForHTTPCall": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "DownloadS3Object"
+    },
+    "DownloadS3Object": {
+      "Type": "Task",
+      "Resource": "${DownloadS3ObjectFunctionArn}",
+      "ResultPath": "$.preSignedUrl",
+      "Next": "GetWebSocketConnectionId"
+    },
+    "GetWebSocketConnectionId": {
+      "Type": "Task",
+      "Resource": "${GetWebSocketConnectionIDFunctionArn}",
+      "Parameters": {
+        "Execution.$": "$$.Execution.Id"
+      },
+      "ResultPath": "$.connectionId",
+      "Next": "CheckIfConnectionIdAvailable"
+    },
+    "CheckIfConnectionIdAvailable": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.connectionId",
+          "IsNull": true,
+          "Next": "WaitForConnectionIdToBeAvailable"
+        }
+      ],
+      "Default": "NotifyWebSocketClient"
+    },
+    "WaitForConnectionIdToBeAvailable": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "GetWebSocketConnectionId"
+    },
+    "NotifyWebSocketClient": {
+      "Type": "Task",
+      "Resource": "${SendMessageFunctionArn}",
+      "End": true
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "file-download-app",
+  "description": "file-download-app",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.14.0",
+    "@aws-sdk/client-dynamodb": "^3.14.0",
+    "@aws-sdk/client-s3": "^3.14.0",
+    "@aws-sdk/client-sfn": "^3.14.0",
+    "@aws-sdk/s3-request-presigner": "^3.14.0",
+    "@aws-sdk/util-dynamodb": "^3.14.0"
+  },
+  "devDependencies": {
+    "jest": "^26.6.3"
+  },
+  "scripts": {
+    "test": "jest"
+  }
+}

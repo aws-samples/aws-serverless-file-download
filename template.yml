@@ -1,0 +1,290 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  file-mgmt
+
+Transform:
+- AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Tracing: Active
+    # Layers:
+    #   - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+  BucketName:
+    Type: String
+
+Resources:
+  AsyncDownload:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/async-download/
+      Handler: app.handler
+      Runtime: nodejs14.x
+      MemorySize: 128
+      Timeout: 120
+      Description: A simple example includes a HTTP get method to call a Step Function
+      Environment:
+        Variables:
+          WEB_SOCKET_ENDPOINT: !Join [ "/", [ !GetAtt SimpleAsyncResponseSocket.ApiEndpoint, !Ref Stage ] ]
+          CONNECTIONS_TABLE: !Ref DDBConnectionsTable
+          STATE_MACHINE_ARN: !Ref ObjectUploaderStateMachine
+      Policies:
+        - CloudWatchLambdaInsightsExecutionRolePolicy
+        - DynamoDBWritePolicy:
+            TableName: !Ref DDBConnectionsTable
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: !GetAtt ObjectUploaderStateMachine.Name
+      Events:
+        DownloadApiEvent:
+          Type: Api
+          Properties:
+            Path: /download
+            Method: GET
+            RestApiId: !Ref DownloadApi
+
+  DownloadApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: FileDownloadApi
+      Description: The API which clients will use to initiate downloading a large file
+      StageName: !Ref StageName
+      TracingEnabled: true
+      EndpointConfiguration:
+        Type: REGIONAL
+  
+  ObjectUploaderStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Tracing:
+        Enabled: true
+      DefinitionUri: statemachine/simple_workflow.asl.json
+      DefinitionSubstitutions:
+        DownloadS3ObjectFunctionArn: !GetAtt DownloadS3ObjectFunction.Arn
+        GetWebSocketConnectionIDFunctionArn: !GetAtt GetWebSocketConnectionIDFunction.Arn
+        SendMessageFunctionArn: !GetAtt SendMessageFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref DownloadS3ObjectFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref GetWebSocketConnectionIDFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SendMessageFunction
+
+  DownloadS3ObjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/download-s3-object/
+      Handler: app.handler
+      Runtime: nodejs14.x
+      MemorySize: 256
+      Timeout: 900
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      Policies:
+        - CloudWatchLambdaInsightsExecutionRolePolicy
+        - S3ReadPolicy:
+            BucketName: !Ref BucketName
+        - S3WritePolicy:
+            BucketName: !Ref BucketName
+
+  GetWebSocketConnectionIDFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/get-websocket-connection/
+      Handler: app.handler
+      Runtime: nodejs14.x
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref DDBConnectionsTable
+      Policies:
+        - CloudWatchLambdaInsightsExecutionRolePolicy
+        - DynamoDBReadPolicy:
+            TableName: !Ref DDBConnectionsTable
+
+  DDBConnectionsTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: executionArnId
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 2
+        WriteCapacityUnits: 2
+
+  # WebSocket API Configurations
+  SimpleAsyncResponseSocket:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: SimpleAsyncResponseSocket
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+      RouteKey: $connect
+      AuthorizationType: NONE
+      OperationName: ConnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref ConnectIntegration
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+      Description: Connect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: 
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnConnectFunction.Arn}/invocations
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      OperationName: DisconnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref DisconnectIntegration
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+      Description: Disconnect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: 
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnDisconnectFunction.Arn}/invocations
+
+  SendRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+      RouteKey: sendMessage
+      AuthorizationType: NONE
+      OperationName: SendRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref SendIntegration
+
+  SendIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+      Description: Send Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: 
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SendMessageFunction.Arn}/invocations
+
+  Deployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - ConnectRoute
+    - SendRoute
+    - DisconnectRoute
+    Properties:
+      ApiId: !Ref SimpleAsyncResponseSocket
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: !Ref StageName
+      DeploymentId: !Ref Deployment
+      ApiId: !Ref SimpleAsyncResponseSocket
+      
+  OnConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/on-connect/
+      Handler: app.handler
+      MemorySize: 256
+      Runtime: nodejs14.x
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DDBConnectionsTable
+      Policies:
+      - CloudWatchLambdaInsightsExecutionRolePolicy
+      - DynamoDBWritePolicy:
+          TableName: !Ref DDBConnectionsTable
+
+  OnConnectPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - SimpleAsyncResponseSocket
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OnConnectFunction
+      Principal: apigateway.amazonaws.com
+
+  OnDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/on-disconnect/
+      Handler: app.handler
+      MemorySize: 256
+      Runtime: nodejs14.x
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DDBConnectionsTable
+      Policies:
+      - CloudWatchLambdaInsightsExecutionRolePolicy
+      - DynamoDBCrudPolicy:
+          TableName: !Ref DDBConnectionsTable
+
+  OnDisconnectPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - SimpleAsyncResponseSocket
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OnDisconnectFunction
+      Principal: apigateway.amazonaws.com
+
+  SendMessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/send-message/
+      Handler: app.handler
+      MemorySize: 256
+      Runtime: nodejs14.x
+      Policies:
+      - CloudWatchLambdaInsightsExecutionRolePolicy
+      - Statement:
+        - Effect: Allow
+          Action:
+          - 'execute-api:ManageConnections'
+          Resource:
+          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SimpleAsyncResponseSocket}/*'
+
+  SendMessagePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - SimpleAsyncResponseSocket
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SendMessageFunction
+      Principal: apigateway.amazonaws.com
+
+Outputs:
+  WebEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${DownloadApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/"
+
+  WebSocketEndpoint:
+    Description: "WebSocket API Gateway endpoint URL"
+    Value: !Join [ "/", [ !GetAtt SimpleAsyncResponseSocket.ApiEndpoint, !Ref Stage ] ]
