@@ -4,7 +4,6 @@ This is a sample serverless application which showcases an async approach to dow
 This architecture uses S3 PreSigned URL and WebSocket endpoint.
 
 > `main` branch uses AWS JavaScript SDK v3.  
-> `aws-sdk-v2` branch uses AWS JavaScript SDK v2.
 
 > :warning: npm version 7.12.0 does not package the zip files properly. Use v7.10.0 when working on **main** branch
 
