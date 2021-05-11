@@ -21,6 +21,12 @@ One such scenario is when customers need to download large files from an HTTP En
 This project contains source code and supporting files for the below proposed architecture:
 ![architecture](serverless-file-download.jpg)
 
+## Prerequisites
+This application expects below prerequisites:
+
+ - The app expects an S3 bucket name (same region as the app) as a parameter to the stack while `sam deploy`. This bucket will be used to store the binary response from HTTP endpoint as S3 Object. You can additionally setup lifecycle policy on those objects.
+ - Install `wscat` (`npm install -g wscat`) which will be used as WebSocket client during testing
+
 ## Deploy the sample application
 
 The AWS SAM CLI is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
@@ -147,7 +153,7 @@ In order to test the setup, follow below steps:
 }
 ```
 
- - Install `wscat` using npm which will be used as WebSocket client
+ - Install `wscat` using npm (if not done already) which will be used as WebSocket client
 
  ```bash
  npm install -g wscat
