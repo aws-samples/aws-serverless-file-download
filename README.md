@@ -21,6 +21,40 @@ One such scenario is when customers need to download large files from an HTTP En
 This project contains source code and supporting files for the below proposed architecture:
 ![architecture](serverless-file-download.jpg)
 
+## How it works
+Client (browser) invokes the REST GET endpoint `/download`. 
+
+> :information_source: &nbsp; This solution does not expect any path param or query params but it can fit to your use case if the underlying HTTP Endpoint expects additional params
+
+`/download` API has a lambda integration which will work on 4 main items:
+- Lambda will invoke a Step Function workflow (responsible for gathering the document, more on it later)
+- Inserts the Step Function Execution ARN, got from above step, to DynamoDB with the Execution ARN as the partition key
+- Captures the WebSocket endpoint url that is available as an environment variable. WebSocket endpoint was created as part of the infrastructure creation process
+- Returns the execution ARN and the Websocket endpoint to the client (browser) synchronously
+
+> :bulb: &nbsp; Note that the response is synchronous but the Step Function has started working on simultaneously
+
+Upon receiving the response from `/download` REST call, client immediately opens a WebSocket connection with the WebSocket Endpoint provided as part of response above. Client also passes the Execution ARN as a payload to the initial connection request.
+
+In the WebSocket Endpoint, as soon as client connection is created, a `connectionId` is generated and `onConnect` handler is called. `onConnect` handler is a Lambda integration which takes the `connectionId` and the `executionArn` from the WebSocket connection and queries DynamoDB with the `executionArn` as the key. Once the DynamoDB item is retrieved (which was inserted by the lambda integration in `/download` rest api call), `onConnect` lambda handler updates DynamoDB item with the `connectionId`. Now, the DynamoDB item has `connectionId` as an attribute
+
+While above ceremonies were going on, Step Functions Workflow was doing the heavy lifting for you by doing below tasks:
+
+1. Step 1:
+    - Call HTTP endpoint (with appropriate params) and get the binary response
+    - Once binary response is received, upload that as an object in an S3 bucket
+    - Once updated, create a pre-signed GET url for that object
+    - Pass pre-signed url to next step
+2. Step 2:
+    - Get the `connectionId` from DynamoDB table which was updated against the current running execution ARN
+    - If `connectionId` is not present yet, wait for few seconds and try again
+    - Pass `connectionId` and pre-signed url to next step
+3. Step 3
+    - In this step, the task has access to WebSocket endpoint, the `connectionId` and the pre-signed url
+    - This step makes a POST call on the WebSocket endpoint against the `connectionId` and pass the pre-signed url as a payload
+
+If the `connectionId` is alive, the pre-signed url is sent to the client which client can use to download the S3 object.
+
 ## Prerequisites
 This application expects below prerequisites:
 
