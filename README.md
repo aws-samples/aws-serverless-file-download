@@ -27,6 +27,8 @@ This application expects below prerequisites:
  - The app expects an S3 bucket name (same region as the app) as a parameter to the stack while `sam deploy`. This bucket will be used to store the binary response from HTTP endpoint as S3 Object. You can additionally setup lifecycle policy on those objects.
  - Install `wscat` (`npm install -g wscat`) which will be used as WebSocket client during testing
 
+> :warning: This application uses [a mock HTTP Endpoint which returns a CSV file as a binary response](https://run.mocky.io/v3/e63ca0e5-53dd-483a-9186-1d7e4a2edb74). This mock endpoint can expire when not used. In such case, replace with your own mock HTTP Endpoint which responds with a binary response.
+
 ## Deploy the sample application
 
 The AWS SAM CLI is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
